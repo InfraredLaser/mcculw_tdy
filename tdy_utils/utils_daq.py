@@ -4,8 +4,10 @@
 
 from mcculw import ul
 from mcculw.enums import InterfaceType
+from mcculw.device_info import DaqDeviceInfo
 import numpy as np
 from typing import Dict, List
+from ctypes import POINTER
 
 
 def configure_devices() -> Dict:
@@ -37,31 +39,30 @@ def configure_devices() -> Dict:
     return connected_devices
 
 """ Building waveforms for DAQs with analog output. """
-def sineWave(
-        board_num:int,
-        buffer, 
-        ao_range, 
-        amplitude, 
-        frequency,
-        num_samples
-        ):
-    t = np.linspace(0, 1, num_samples, endpoint=True)
-    sine_wave = amplitude * np.sin(2*np.pi * frequency * t)
-    for i, point in enumerate(sine_wave):
-        raw_value = ul.from_eng_units(board_num, ao_range, point)
+def waveform(
+        waveform_type:str,
+        daq:DaqDeviceInfo,
+        buffer:POINTER,
+        duration:int,
+        num_samples:int,
+        amplitude:float,
+        frequency:int):
+    '''
+        Adjust waveform in memory. Currently parameter waveform_type only supports 'sine' and 'square'.
+    '''
+    if not daq.supports_analog_output:
+        raise f"[ERROR] Daq does not support Analog Output: {daq.product_name}"
+    
+    t = np.linspace(0, duration, num_samples, endpoint=True)
+    if waveform_type == "sine":
+        wave = amplitude * np.sin(2*np.pi * frequency * t)
+    elif waveform_type == "square":
+        wave = amplitude * np.sign(np.sin(2*np.pi * frequency * t))
+    else:
+        raise "[ERROR] Waveform only supports string 'sine' and 'square'. \n"
+
+    for i, sample in enumerate(wave):
+        raw_value = ul.from_eng_units(daq.board_num, daq.get_ai_info().supported_ranges[0], sample)
         buffer[i] = raw_value
 
-def squareWave(
-        board_num:int,
-        buffer, 
-        ao_range, 
-        amplitude, 
-        frequency,
-        num_samples
-        ):
-    t = np.linspace(0, 1, num_samples, endpoint=True)
-    sine_wave = amplitude * np.sign(np.sin(2*np.pi * frequency * t))
-    for i, point in enumerate(sine_wave):
-        raw_value = ul.from_eng_units(board_num, ao_range, point)
-        buffer[i] = raw_value
 # configure_devices()

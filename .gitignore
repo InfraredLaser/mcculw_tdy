@@ -1,3 +1,7 @@
+# Non-Teledye files
+examples.zip
+.vscode
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

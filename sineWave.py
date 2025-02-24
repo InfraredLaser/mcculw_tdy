@@ -62,19 +62,21 @@ def run_example():
               daq_dev_info.unique_id, ')\n', sep='')
 
         ao_info = daq_dev_info.get_ao_info()
-
-        low_chan = 0
-        high_chan = 0#min(3, ao_info.num_chans - 1)
-        num_chans = high_chan - low_chan + 1
-
-        rate = 7100
-        points_per_channel = 1000
-        total_count = 100_000 #points_per_channel * num_chans
-
         ao_range = ao_info.supported_ranges[0]
 
+        LOW_CHAN = 0
+        HIG_CHAN = 0 #min(3, ao_info.num_chans - 1)
+        NUM_CHAN = HIG_CHAN - LOW_CHAN + 1
+
+        AMPL = 1.0 # Voltage output is ratio of total analog output voltage
+        print(f"Voltage: {AMPL} V")
+        FREQ = 5_000 #Sample rate 100,000 -> FREQ = 10,000 gives 1 kHz somehow...
+        SAMPLE_RATE = 100_000
+        DURATION = 1
+        NUM_SAMPLES = SAMPLE_RATE * DURATION
+
         # Allocate a buffer for the scan
-        memhandle = ul.win_buf_alloc(total_count)
+        memhandle = ul.win_buf_alloc(NUM_SAMPLES)
         # Convert the memhandle to a ctypes array
         # Note: the ctypes array will no longer be valid after win_buf_free
         # is called.
@@ -86,25 +88,36 @@ def run_example():
         if not memhandle:
             raise Exception('Error: Failed to allocate memory')
 
-        squareWave(board_num, ctypes_array, ao_range, amplitude=5, frequency=rate, num_samples=total_count)
-        
-
         # Start the scan
         scan_options = (ScanOptions.BACKGROUND | ScanOptions.CONTINUOUS)
-        ul.a_out_scan(board_num, low_chan, high_chan, total_count, rate,
-                      ao_range, memhandle, scan_options)
+        squareWave(board_num, ctypes_array, ao_range, amplitude=AMPL, duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+        ul.a_out_scan(board_num, LOW_CHAN, HIG_CHAN, NUM_SAMPLES, FREQ, ao_range, memhandle, scan_options)
         
 
         # Wait for the scan to complete
         print('Waiting for output scan to complete...', end='')
         status = Status.RUNNING
-        while status != Status.IDLE:
-            print('.', end='')
 
-            # Slow down the status check so as not to flood the CPU
-            sleep(0.5)
+        bv_curve_example = np.arange(0, 2.65, 0.05, dtype=float)
+        SLEEP_STEP = 1 # sec
+        print(f"\nStart: {bv_curve_example[0]:.2f} V | Stop: {bv_curve_example[-1]:.2f} V")
+        while status != Status.IDLE:
+            # print('.', end='')
+            # sleep(1)
+            # squareWave(board_num, ctypes_array, ao_range, amplitude=0.05, duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+            # # Slow down the status check so as not to flood the CPU
+            # sleep(5)
+            # squareWave(board_num, ctypes_array, ao_range, amplitude=0.5, duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+
+            for v_amplitude in bv_curve_example:
+                print(f"Voltage: {v_amplitude:.4} V")
+                squareWave(board_num, ctypes_array, ao_range, amplitude=float(v_amplitude), duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+                sleep(SLEEP_STEP)
 
             status, _, _ = ul.get_status(board_num, FunctionType.AOFUNCTION)
+            squareWave(board_num, ctypes_array, ao_range, amplitude=0., duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+            sleep(SLEEP_STEP)
+            break
 
         print('')
 
@@ -114,6 +127,8 @@ def run_example():
     finally:
         if memhandle:
             # Free the buffer in a finally block to prevent a memory leak.
+            squareWave(board_num, ctypes_array, ao_range, amplitude=0, duration=DURATION, frequency=FREQ, num_samples=NUM_SAMPLES)
+            sleep(0.1)
             ul.win_buf_free(memhandle)
         if use_device_detection:
             ul.release_daq_device(board_num)
@@ -138,9 +153,10 @@ def squareWave(
         ao_range, 
         amplitude, 
         frequency,
+        duration,
         num_samples
         ):
-    t = np.linspace(0, 1, num_samples, endpoint=True)
+    t = np.linspace(0, duration, int(duration*num_samples), endpoint=True)
     sine_wave = amplitude * np.sign(np.sin(2*np.pi * frequency * t))
     for i, point in enumerate(sine_wave):
         raw_value = ul.from_eng_units(board_num, ao_range, point)
